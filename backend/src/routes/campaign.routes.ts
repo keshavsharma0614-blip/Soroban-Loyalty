@@ -7,6 +7,10 @@ import {
   softDeleteCampaign,
   restoreCampaign,
 } from "../services/campaign.service";
+import { redisClient } from "../lib/redis";
+import { logger } from "../logger";
+import { asyncHandler } from "../middleware/errorHandler";
+import { BadRequestError, NotFoundError } from "../utils/errors";
 
 export const campaignRouter = Router();
 
@@ -54,7 +58,27 @@ export const campaignRouter = Router();
 campaignRouter.get("/", asyncHandler(async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
   const offset = parseInt(String(req.query.offset ?? "0"), 10) || 0;
+  
+  const cacheKey = `campaigns:list:${limit}:${offset}`;
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) {
+      logger.debug(`Cache hit for ${cacheKey}`);
+      return res.json(JSON.parse(cached));
+    }
+  } catch (err) {
+    logger.error("Redis cache read error", err as Error);
+  }
+
+  logger.debug(`Cache miss for ${cacheKey}`);
   const result = await getCampaigns(limit, offset);
+  
+  try {
+    await redisClient.setex(cacheKey, 30, JSON.stringify(result));
+  } catch (err) {
+    logger.error("Redis cache write error", err as Error);
+  }
+
   res.json(result);
 }));
 
@@ -90,7 +114,7 @@ campaignRouter.get("/", asyncHandler(async (req: Request, res: Response) => {
  *         description: Server error.
  */
 campaignRouter.get("/:id", asyncHandler(async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) {
     throw new BadRequestError("Invalid id", { id: req.params.id });
   }
@@ -145,14 +169,16 @@ campaignRouter.patch("/reorder", asyncHandler(async (req: Request, res: Response
   if (!parsed.success) {
     throw new BadRequestError("Invalid request body", { errors: parsed.error.errors });
   }
-});
+  await reorderCampaigns(parsed.data.order);
+  res.json({ ok: true });
+}));
 
 /**
  * DELETE /campaigns/:id
  * Soft-deletes a campaign by setting deleted_at.
  */
 campaignRouter.delete("/:id", async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   try {
     const deleted = await softDeleteCampaign(id);
@@ -168,7 +194,7 @@ campaignRouter.delete("/:id", async (req: Request, res: Response) => {
  * Restores a soft-deleted campaign.
  */
 campaignRouter.post("/:id/restore", async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   try {
     const restored = await restoreCampaign(id);

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/errors';
-import logger from '../logger';
+import { logger } from '../logger';
 
 interface ErrorResponse {
   code: string;
@@ -21,9 +21,8 @@ export function errorHandler(
   next: NextFunction
 ) {
   // Log error for debugging
-  logger.error({
+  logger.error(err.message, err, {
     name: err.name,
-    message: err.message,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     path: req.path,
     method: req.method,
