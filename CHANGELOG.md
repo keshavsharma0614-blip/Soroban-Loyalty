@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.27.1...v1.28.0) (2026-04-29)
+
+
+### Features
+
+* campaign deactivation UI for merchants ([#42](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/42)) ([df5d064](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/df5d0649cb1728f46d6bac619dd5c112a9624ff4))
+
 ## [1.27.1](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.27.0...v1.27.1) (2026-04-29)
 
 
