@@ -1,3 +1,33 @@
+# [1.32.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.31.0...v1.32.0) (2026-04-29)
+
+
+### Features
+
+* optimize cross-contract call pattern in rewards contract ([ffb3810](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/ffb3810e3255af813718a9a731397a4160f38599)), closes [#116](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/116)
+
+# [1.31.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.30.0...v1.31.0) (2026-04-29)
+
+
+### Features
+
+* **frontend:** add reusable ConfirmDialog for irreversible actions ([fd4ddd8](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/fd4ddd8d79af49983871ddbf9a4e17f2fa708550)), closes [#dc2626](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/dc2626) [#48](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/48)
+* **governance:** add on-chain governance contract for LYT holders ([075a06f](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/075a06f3306cf419eba223664a2879fcd22b3d92)), closes [#129](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/129)
+* **rewards:** add referral mechanism with bonus LYT ([701bbbe](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/701bbbed966495a7adbd62c9cf718c8880f36ede)), closes [#30](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/30)
+
+# [1.30.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.29.0...v1.30.0) (2026-04-29)
+
+
+### Features
+
+* **campaign:** add max_claims cap to campaigns ([8b4a0b8](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/8b4a0b85b05e7a20b352d0f80f520458734ec4dc)), closes [#111](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/111)
+
+# [1.29.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.28.0...v1.29.0) (2026-04-29)
+
+
+### Features
+
+* add Sentry error monitoring for frontend and backend ([ef5d43b](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/ef5d43bc382645ccf91dc5a1c511b4275c87db95)), closes [#71](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/71)
+
 # [1.28.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.27.1...v1.28.0) (2026-04-29)
 
 
