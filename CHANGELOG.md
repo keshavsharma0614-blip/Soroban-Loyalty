@@ -1,3 +1,10 @@
+## [1.27.1](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.27.0...v1.27.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* WCAG 2.1 AA contrast audit and fixes ([f9b08bd](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/f9b08bd8de03379632b8d5549c650fc69a05ed9f))
+
 # [1.27.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.26.0...v1.27.0) (2026-04-29)
 
 
