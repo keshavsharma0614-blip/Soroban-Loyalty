@@ -5,6 +5,20 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
 };
 
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+/// Role identifiers for the campaign contract.
+/// ADMIN can assign/revoke roles and manage upgrades.
+/// PAUSER can pause/unpause the contract.
+/// RECORDER is granted to the rewards contract so it can call `record_claim`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Role {
+    Admin,
+    Pauser,
+    Recorder,
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /// Optimized Campaign struct (Issue #110).
@@ -22,8 +36,8 @@ pub struct Campaign {
     pub id: u64,
     pub merchant: Address,
     pub reward_amount: i128,
-    pub expiration: u64, // Unix timestamp (seconds)
-    pub created_at: u64, // Unix timestamp (seconds)
+    pub expiration: u64,
+    pub created_at: u64,
     pub active: bool,
     pub paused: bool,
     pub total_claimed: u64,
@@ -49,11 +63,18 @@ pub struct UpgradeProposal {
 pub enum DataKey {
     Campaign(u64),
     NextId,
-    Admins,
+    /// Role membership: (role, address) → bool
+    RoleMember(Role, Address),
+    /// Multi-sig threshold for upgrades
     Threshold,
     UpgradeProposal,
     Paused,
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/// 48-hour timelock for upgrades (in seconds)
+const TIMELOCK: u64 = 172_800;
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
@@ -96,7 +117,7 @@ impl CampaignContract {
     /// - `"threshold must be positive"` — if `threshold == 0`
     /// - `"insufficient admins for threshold"` — if `admins.len() < threshold`
     pub fn initialize(env: Env, admins: soroban_sdk::Vec<Address>, threshold: u32) {
-        if env.storage().instance().has(&DataKey::Admins) {
+        if env.storage().instance().has(&DataKey::Paused) {
             panic!("already initialized");
         }
         assert!(threshold > 0, "threshold must be positive");
@@ -110,9 +131,93 @@ impl CampaignContract {
             .instance()
             .set(&DataKey::Threshold, &threshold);
         env.storage().instance().set(&DataKey::NextId, &1_u64);
+        env.storage().instance().set(&DataKey::Paused, &false);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Role helpers ──────────────────────────────────────────────────────────
+
+    fn _grant_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::RoleMember(role.clone(), account.clone()), &true);
+    }
+
+    fn _revoke_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .remove(&DataKey::RoleMember(role.clone(), account.clone()));
+    }
+
+    fn has_role(env: &Env, role: &Role, account: &Address) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::RoleMember(role.clone(), account.clone()))
+            .unwrap_or(false)
+    }
+
+    fn require_role(env: &Env, role: &Role, account: &Address) {
+        account.require_auth();
+        if !Self::has_role(env, role, account) {
+            panic!("missing role");
+        }
+    }
+
+    // ── Role management (ADMIN only) ──────────────────────────────────────────
+
+    /// Grant `role` to `account`. Caller must have ADMIN role.
+    pub fn grant_role(env: Env, admin: Address, role: Role, account: Address) {
+        Self::require_role(&env, &Role::Admin, &admin);
+        Self::_grant_role(&env, &role, &account);
+        env.events()
+            .publish((ROLE_GRANTED, role), (admin, account));
+    }
+
+    /// Revoke `role` from `account`. Caller must have ADMIN role.
+    pub fn revoke_role(env: Env, admin: Address, role: Role, account: Address) {
+        Self::require_role(&env, &Role::Admin, &admin);
+        Self::_revoke_role(&env, &role, &account);
+        env.events()
+            .publish((ROLE_REVOKED, role), (admin, account));
+    }
+
+    /// Returns true if `account` has `role`.
+    pub fn has_role_view(env: Env, role: Role, account: Address) -> bool {
+        Self::has_role(&env, &role, &account)
+    }
+
+    // ── Pause (PAUSER role) ───────────────────────────────────────────────────
+
+    pub fn pause(env: Env, pauser: Address) {
+        Self::require_role(&env, &Role::Pauser, &pauser);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish(PAUSED, pauser);
+    }
+
+    pub fn unpause(env: Env, pauser: Address) {
+        Self::require_role(&env, &Role::Pauser, &pauser);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish(UNPAUSED, pauser);
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    fn require_not_paused(env: &Env) {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            panic!("contract is paused");
+        }
+    }
+
+    // ── ID helpers ────────────────────────────────────────────────────────────
 
     fn next_id(env: &Env) -> u64 {
         env.storage().instance().get(&DataKey::NextId).unwrap_or(1)
@@ -205,7 +310,7 @@ impl CampaignContract {
         id
     }
 
-    /// Deactivate / reactivate a campaign. Only the merchant can do this.
+    /// Deactivate / reactivate a campaign. Only the campaign's merchant can do this.
     pub fn set_active(env: Env, campaign_id: u64, active: bool) {
         let mut campaign = Self::get_campaign_internal(&env, campaign_id);
         campaign.merchant.require_auth();
@@ -283,7 +388,6 @@ impl CampaignContract {
         Self::get_campaign_internal(&env, campaign_id)
     }
 
-    /// View function returning only the on-chain metadata fields.
     pub fn get_campaign_metadata(env: Env, campaign_id: u64) -> (Bytes, Bytes) {
         let c = Self::get_campaign_internal(&env, campaign_id);
         (c.name, c.description)
@@ -302,7 +406,7 @@ impl CampaignContract {
         c.active && env.ledger().timestamp() < c.expiration as u64
     }
 
-    // ── Upgrade Mechanism ───────────────────────────────────────────────────
+    // ── Upgrade mechanism (ADMIN multi-sig + timelock) ────────────────────────
 
     /// Propose a contract upgrade with the given WASM hash.
     ///
@@ -317,7 +421,7 @@ impl CampaignContract {
     /// - `"upgrade already proposed"` — if a proposal is already pending
     /// - `"not an admin"` — if `admin` is not in the admin list
     pub fn propose_upgrade(env: Env, admin: Address, wasm_hash: soroban_sdk::BytesN<32>) {
-        Self::require_admin(&env, &admin);
+        Self::require_role(&env, &Role::Admin, &admin);
         if env.storage().instance().has(&DataKey::UpgradeProposal) {
             panic!("upgrade already proposed");
         }
@@ -347,7 +451,7 @@ impl CampaignContract {
     /// - `"already authorized by this admin"` — if `admin` has already signed
     /// - `"not an admin"` — if `admin` is not in the admin list
     pub fn authorize_upgrade(env: Env, admin: Address) {
-        Self::require_admin(&env, &admin);
+        Self::require_role(&env, &Role::Admin, &admin);
         let mut proposal: UpgradeProposal = env
             .storage()
             .instance()
@@ -379,7 +483,7 @@ impl CampaignContract {
     /// - `"timelock not met"` — if the required delay since proposal has not elapsed
     /// - `"not an admin"` — if `admin` is not in the admin list
     pub fn execute_upgrade(env: Env, admin: Address) {
-        Self::require_admin(&env, &admin);
+        Self::require_role(&env, &Role::Admin, &admin);
         let proposal: UpgradeProposal = env
             .storage()
             .instance()
@@ -410,7 +514,7 @@ impl CampaignContract {
     /// # Panics
     /// - `"not an admin"` — if `admin` is not in the admin list
     pub fn cancel_upgrade(env: Env, admin: Address) {
-        Self::require_admin(&env, &admin);
+        Self::require_role(&env, &Role::Admin, &admin);
         env.storage().instance().remove(&DataKey::UpgradeProposal);
         env.events().publish((UPGRADE_CANCELLED,), admin);
     }
@@ -466,6 +570,67 @@ mod tests {
     fn desc(env: &Env) -> Bytes {
         Bytes::from_slice(env, b"Earn LYT on every purchase this summer")
     }
+
+    // ── Role management tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_create_campaign() {
+        let (env, _admin1, _admin2, client) = setup();
+        let merchant = Address::generate(&env);
+        let recorder = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 86400;
+        let id = client.create_campaign(&merchant, &100, &expiry, &name(&env), &desc(&env));
+
+        client.grant_role(&admin1, &Role::Recorder, &recorder);
+        client.record_claim(&recorder, &id);
+        assert_eq!(client.get_campaign(&id).total_claimed, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "missing role")]
+    fn test_record_claim_without_recorder_role_rejected() {
+        let (env, _admin1, _admin2, client) = setup();
+        let merchant = Address::generate(&env);
+        let non_recorder = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 86400;
+        let id = client.create_campaign(&merchant, &100, &expiry, &name(&env), &desc(&env));
+        client.record_claim(&non_recorder, &id);
+    }
+
+    // ── Pause tests ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pause_blocks_create_campaign() {
+        let (env, admin1, _admin2, client) = setup();
+        let merchant = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 86400;
+        client.pause(&admin1);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            client.create_campaign(&merchant, &100, &expiry, &name(&env), &desc(&env));
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unpause_allows_create_campaign() {
+        let (env, admin1, _admin2, client) = setup();
+        let merchant = Address::generate(&env);
+        let expiry = env.ledger().timestamp() + 86400;
+        client.pause(&admin1);
+        client.unpause(&admin1);
+        let id = client.create_campaign(&merchant, &100, &expiry, &name(&env), &desc(&env));
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "missing role")]
+    fn test_pause_requires_pauser_role() {
+        let (env, _admin1, _admin2, client) = setup();
+        let non_pauser = Address::generate(&env);
+        client.pause(&non_pauser);
+    }
+
+    // ── Campaign CRUD tests ───────────────────────────────────────────────────
 
     #[test]
     fn test_create_campaign() {

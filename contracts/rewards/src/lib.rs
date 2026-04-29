@@ -12,7 +12,7 @@ mod token {
     #[allow(dead_code)]
     #[contractclient(name = "TokenClient")]
     pub trait Token {
-        fn mint(env: Env, to: Address, amount: i128);
+        fn mint(env: Env, minter: Address, to: Address, amount: i128);
         fn burn(env: Env, from: Address, amount: i128);
         fn balance(env: Env, addr: Address) -> i128;
         fn total_supply_view(env: Env) -> i128;
@@ -52,6 +52,16 @@ mod campaign {
 }
 
 use campaign::Campaign;
+
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+/// Role identifiers for the rewards contract.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Role {
+    Admin,
+    Pauser,
+}
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
@@ -133,16 +143,102 @@ impl RewardsContract {
         token_contract: Address,
         campaign_contract: Address,
     ) {
-        if env.storage().instance().has(&DataKey::Admin) {
+        if env.storage().instance().has(&DataKey::Paused) {
             panic!("already initialized");
         }
-        env.storage().instance().set(&DataKey::Admin, &admin);
+        Self::_grant_role(&env, &Role::Admin, &admin);
+        Self::_grant_role(&env, &Role::Pauser, &admin);
+
         env.storage()
             .instance()
             .set(&DataKey::TokenContract, &token_contract);
         env.storage()
             .instance()
             .set(&DataKey::CampaignContract, &campaign_contract);
+        env.storage().instance().set(&DataKey::Paused, &false);
+    }
+
+    // ── Role helpers ──────────────────────────────────────────────────────────
+
+    fn _grant_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::RoleMember(role.clone(), account.clone()), &true);
+    }
+
+    fn _revoke_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .remove(&DataKey::RoleMember(role.clone(), account.clone()));
+    }
+
+    fn has_role(env: &Env, role: &Role, account: &Address) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::RoleMember(role.clone(), account.clone()))
+            .unwrap_or(false)
+    }
+
+    fn require_role(env: &Env, role: &Role, account: &Address) {
+        account.require_auth();
+        if !Self::has_role(env, role, account) {
+            panic!("missing role");
+        }
+    }
+
+    // ── Role management (ADMIN only) ──────────────────────────────────────────
+
+    /// Grant `role` to `account`. Caller must have ADMIN role.
+    pub fn grant_role(env: Env, admin: Address, role: Role, account: Address) {
+        Self::require_role(&env, &Role::Admin, &admin);
+        Self::_grant_role(&env, &role, &account);
+        env.events()
+            .publish((ROLE_GRANTED, role), (admin, account));
+    }
+
+    /// Revoke `role` from `account`. Caller must have ADMIN role.
+    pub fn revoke_role(env: Env, admin: Address, role: Role, account: Address) {
+        Self::require_role(&env, &Role::Admin, &admin);
+        Self::_revoke_role(&env, &role, &account);
+        env.events()
+            .publish((ROLE_REVOKED, role), (admin, account));
+    }
+
+    /// Returns true if `account` has `role`.
+    pub fn has_role_view(env: Env, role: Role, account: Address) -> bool {
+        Self::has_role(&env, &role, &account)
+    }
+
+    // ── Pause (PAUSER role) ───────────────────────────────────────────────────
+
+    pub fn pause(env: Env, pauser: Address) {
+        Self::require_role(&env, &Role::Pauser, &pauser);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish(PAUSED, pauser);
+    }
+
+    pub fn unpause(env: Env, pauser: Address) {
+        Self::require_role(&env, &Role::Pauser, &pauser);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish(UNPAUSED, pauser);
+    }
+
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    fn require_not_paused(env: &Env) {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            panic!("contract is paused");
+        }
     }
 
     // ── Cached cross-contract clients ─────────────────────────────────────────
@@ -578,6 +674,7 @@ mod tests {
 
     struct TestSetup<'a> {
         env: Env,
+        admin: Address,
         token: soroban_loyalty_token::TokenContractClient<'a>,
         campaign: soroban_loyalty_campaign::CampaignContractClient<'a>,
         rewards: RewardsContractClient<'a>,
@@ -877,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn test_integration_redemption_loop() {
+    fn test_claim_emits_event() {
         let t = setup();
         let merchant = Address::generate(&t.env);
         let user = Address::generate(&t.env);

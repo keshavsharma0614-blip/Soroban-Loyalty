@@ -5,6 +5,18 @@ use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, Env, String, Symbol, Vec,
 };
 
+// ── Roles ─────────────────────────────────────────────────────────────────────
+
+/// Role identifiers. ADMIN can assign/revoke all roles.
+/// MINTER can call `mint`. PAUSER can call `pause`/`unpause`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Role {
+    Admin,
+    Minter,
+    Pauser,
+}
+
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -80,6 +92,35 @@ impl TokenContract {
         env.storage().instance().set(&DataKey::Symbol, &symbol);
         env.storage().instance().set(&DataKey::Decimals, &decimals);
         env.storage().instance().set(&DataKey::TotalSupply, &0_i128);
+        env.storage().instance().set(&DataKey::Paused, &false);
+    }
+
+    // ── Role helpers ──────────────────────────────────────────────────────────
+
+    fn _grant_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::RoleMember(role.clone(), account.clone()), &true);
+    }
+
+    fn _revoke_role(env: &Env, role: &Role, account: &Address) {
+        env.storage()
+            .instance()
+            .remove(&DataKey::RoleMember(role.clone(), account.clone()));
+    }
+
+    fn has_role(env: &Env, role: &Role, account: &Address) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::RoleMember(role.clone(), account.clone()))
+            .unwrap_or(false)
+    }
+
+    fn require_role(env: &Env, role: &Role, account: &Address) {
+        account.require_auth();
+        if !Self::has_role(env, role, account) {
+            panic!("missing role");
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -360,6 +401,55 @@ mod tests {
             &7,
         );
         (s1, s2, s3, minter, client)
+    }
+
+    // ── Role management tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_initial_roles_granted_to_admin() {
+        let (env, admin, client) = setup();
+        assert!(client.has_role_view(&Role::Admin, &admin));
+        assert!(client.has_role_view(&Role::Minter, &admin));
+        assert!(client.has_role_view(&Role::Pauser, &admin));
+    }
+
+    #[test]
+    fn test_grant_role_emits_event() {
+        let (env, admin, client) = setup();
+        let minter = Address::generate(&env);
+        client.grant_role(&admin, &Role::Minter, &minter);
+        assert!(client.has_role_view(&Role::Minter, &minter));
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        assert_eq!(
+            last,
+            (
+                client.address.clone(),
+                (ROLE_GRANTED, Role::Minter).into_val(&env),
+                (admin, minter).into_val(&env),
+            )
+        );
+    }
+
+    #[test]
+    fn test_revoke_role_emits_event() {
+        let (env, admin, client) = setup();
+        let minter = Address::generate(&env);
+        client.grant_role(&admin, &Role::Minter, &minter);
+        client.revoke_role(&admin, &Role::Minter, &minter);
+        assert!(!client.has_role_view(&Role::Minter, &minter));
+
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        assert_eq!(
+            last,
+            (
+                client.address.clone(),
+                (ROLE_REVOKED, Role::Minter).into_val(&env),
+                (admin, minter).into_val(&env),
+            )
+        );
     }
 
     #[test]
