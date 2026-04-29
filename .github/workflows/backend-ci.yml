@@ -53,8 +53,8 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Apply DB schema
-        run: psql $DATABASE_URL -f ../database/schema.sql
+      - name: Run migrations
+        run: npm run migrate:up
 
       - name: Create dedicated integration test database
         run: psql $DATABASE_URL -c "CREATE DATABASE loyalty_test;"
