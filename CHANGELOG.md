@@ -1,3 +1,47 @@
+# [1.27.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.26.0...v1.27.0) (2026-04-29)
+
+
+### Features
+
+* code of conduct ([cde1693](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/cde169306cfa77312bd66eb5d7747578c64d0ea8))
+
+# [1.26.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.25.0...v1.26.0) (2026-04-29)
+
+
+### Features
+
+* audit log table for sensitive operations ([#22](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/22)) ([a46eb16](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/a46eb160f40f35ae418a290535d832eda1162fde))
+
+# [1.25.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.24.0...v1.25.0) (2026-04-29)
+
+
+### Features
+
+* **contracts:** add campaign pause and resume functionality ([62027e7](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/62027e70cebf4560327e160f5398c9761f8cd9cb))
+
+# [1.24.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.23.0...v1.24.0) (2026-04-29)
+
+
+### Features
+
+* add emergency pause mechanism across all three contracts ([d66d81b](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/d66d81ba0e3338228ed19f23c0c2c31964d2528d))
+* automated PostgreSQL backup to S3 with 30-day retention ([ea0bc10](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/ea0bc100c998db10853c2a5cc57c4eadb554379e))
+
+# [1.23.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.22.1...v1.23.0) (2026-04-29)
+
+
+### Features
+
+* centralized log aggregation with ELK stack ([#74](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/74)) ([c0b9e6d](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/c0b9e6d3b857a91cddd82d1351e8d7bf589af40a))
+* JWT authentication for merchant endpoints ([#9](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/9)) ([327ffe7](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/327ffe771235220afe87007436bb9856b28a9646))
+
+## [1.22.1](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.22.0...v1.22.1) (2026-04-29)
+
+
+### Performance Improvements
+
+* optimize campaign storage layout and implement temporary storage [#110](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/110) ([1d2b4c7](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/1d2b4c740c69e097f0afdfa996b78890af69941c))
+
 # [1.22.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.21.1...v1.22.0) (2026-04-28)
 
 
