@@ -14,6 +14,7 @@ mod token {
         fn mint(env: Env, to: Address, amount: i128);
         fn burn(env: Env, from: Address, amount: i128);
         fn balance(env: Env, addr: Address) -> i128;
+        fn total_supply_view(env: Env) -> i128;
     }
 }
 
@@ -245,6 +246,14 @@ impl RewardsContract {
             .persistent()
             .set(&DataKey::Claimed(user.clone(), campaign_id), &record);
 
+        // Invariant: user balance increased by exactly reward_amount.
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(
+            Self::token_client(&env).balance(&user),
+            balance_before + campaign.reward_amount,
+            "invariant: balance must increase by reward_amount after claim"
+        );
+
         env.events().publish(
             (REWARD_CLAIMED, symbol_short!("user"), user.clone()),
             (campaign_id, final_amount, multiplier_bp),
@@ -300,7 +309,29 @@ impl RewardsContract {
         Self::require_not_paused(&env);
         assert!(amount > 0, "amount must be positive");
 
+        #[cfg(debug_assertions)]
+        let (balance_before, supply_before) = {
+            let tc = Self::token_client(&env);
+            (tc.balance(&user), tc.total_supply_view())
+        };
+
         Self::token_client(&env).burn(&user, &amount);
+
+        // Invariant: balance and total supply each decreased by exactly amount.
+        #[cfg(debug_assertions)]
+        {
+            let tc = Self::token_client(&env);
+            debug_assert_eq!(
+                tc.balance(&user),
+                balance_before - amount,
+                "invariant: balance must decrease by amount after redeem"
+            );
+            debug_assert_eq!(
+                tc.total_supply_view(),
+                supply_before - amount,
+                "invariant: total_supply must decrease by amount after redeem"
+            );
+        }
 
         env.events()
             .publish((REWARD_REDEEMED, symbol_short!("user"), user), amount);
@@ -752,5 +783,69 @@ mod tests {
         t.campaign.resume_campaign(&cid);
         t.rewards.claim_reward(&user, &cid);
         assert!(t.rewards.has_claimed_view(&user, &cid));
+    }
+
+    // ── Invariant tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_invariant_claimed_flag_set_before_mint() {
+        let t = setup();
+        let merchant = Address::generate(&t.env);
+        let user = Address::generate(&t.env);
+        let expiry = t.env.ledger().timestamp() + 86400;
+
+        let cid = t.campaign.create_campaign(&merchant, &500, &expiry);
+        t.rewards.claim_reward(&user, &cid);
+
+        // After claim: flag must be set and balance must reflect the mint.
+        assert!(t.rewards.has_claimed_view(&user, &cid), "invariant: claimed flag set");
+        assert_eq!(t.token.balance(&user), 500, "invariant: balance == reward_amount after claim");
+    }
+
+    #[test]
+    fn test_invariant_balance_increases_by_reward_amount() {
+        let t = setup();
+        let merchant = Address::generate(&t.env);
+        let user = Address::generate(&t.env);
+        let expiry = t.env.ledger().timestamp() + 86400;
+        let reward = 750_i128;
+
+        let cid = t.campaign.create_campaign(&merchant, &reward, &expiry);
+        let bal_before = t.token.balance(&user);
+        t.rewards.claim_reward(&user, &cid);
+
+        assert_eq!(
+            t.token.balance(&user),
+            bal_before + reward,
+            "invariant: balance increases by exactly reward_amount"
+        );
+    }
+
+    #[test]
+    fn test_invariant_redeem_decreases_balance_and_supply() {
+        let t = setup();
+        let merchant = Address::generate(&t.env);
+        let user = Address::generate(&t.env);
+        let expiry = t.env.ledger().timestamp() + 86400;
+
+        let cid = t.campaign.create_campaign(&merchant, &500, &expiry);
+        t.rewards.claim_reward(&user, &cid);
+
+        let bal_before = t.token.balance(&user);
+        let supply_before = t.token.total_supply_view();
+        let redeem_amount = 200_i128;
+
+        t.rewards.redeem_reward(&user, &redeem_amount);
+
+        assert_eq!(
+            t.token.balance(&user),
+            bal_before - redeem_amount,
+            "invariant: balance decreases by redeem amount"
+        );
+        assert_eq!(
+            t.token.total_supply_view(),
+            supply_before - redeem_amount,
+            "invariant: total_supply decreases by redeem amount"
+        );
     }
 }

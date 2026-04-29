@@ -230,7 +230,8 @@ impl TokenContract {
         let key = DataKey::Balance(from.clone());
         let bal = Self::read_balance(&env, &key);
         assert!(bal >= amount, "insufficient balance");
-        Self::write_balance(&env, &key, bal - amount);
+        let new_bal = bal - amount;
+        Self::write_balance(&env, &key, new_bal);
 
         let new_supply = Self::total_supply(&env).checked_sub(amount).expect("underflow");
         Self::set_total_supply(&env, new_supply);

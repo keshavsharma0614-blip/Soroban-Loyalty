@@ -230,6 +230,10 @@ impl CampaignContract {
     pub fn record_claim(env: Env, campaign_id: u64) {
         Self::require_not_paused(&env);
         let mut campaign = Self::get_campaign_internal(&env, campaign_id);
+
+        #[cfg(debug_assertions)]
+        let claimed_before = campaign.total_claimed;
+
         campaign.total_claimed = campaign
             .total_claimed
             .checked_add(1)
@@ -237,6 +241,13 @@ impl CampaignContract {
         env.storage()
             .persistent()
             .set(&DataKey::Campaign(campaign_id), &campaign);
+
+        // Invariant: total_claimed is strictly monotonically increasing.
+        #[cfg(debug_assertions)]
+        debug_assert!(
+            campaign.total_claimed > claimed_before,
+            "invariant: total_claimed must increase after record_claim"
+        );
     }
 
     pub fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
