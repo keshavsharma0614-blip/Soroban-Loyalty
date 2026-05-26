@@ -5,6 +5,7 @@ Thank you for your interest in contributing to Soroban-Loyalty! This document pr
 ## Table of Contents
 - [Development Environment Setup](#development-environment-setup)
 - [Git Workflow](#git-workflow)
+- [Onboarding Guide](docs/onboarding.md)
 - [Coding Standards](#coding-standards)
 - [Running Tests](#running-tests)
 - [Deploying Contracts Locally](#deploying-contracts-locally)
