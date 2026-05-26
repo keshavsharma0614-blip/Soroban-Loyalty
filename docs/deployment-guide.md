@@ -587,94 +587,73 @@ For production, consider a dedicated RPC node via
 [NOWNodes](https://nownodes.io/), or running your own
 [stellar/quickstart](https://github.com/stellar/quickstart) container.
 
+
 ---
 
-## 9. Docker Production Configuration
+## 9. Secrets Management
 
-### 9.1 Running in production with docker-compose.prod.yml
+Variables marked **SECRET** in `.env.example` must never be committed to the
+repository. Use one of the following approaches in production.
 
-The repository ships two Docker Compose files:
+### Recommended: AWS Secrets Manager
 
-| File | Purpose |
-|------|---------|
-| `docker-compose.yml` | Base service definitions (used in all environments) |
-| `docker-compose.prod.yml` | Production overrides: restart policy, resource limits, logging |
-| `docker-compose.override.yml` | Dev overrides: disables auto-restart so crashes stay visible |
-
-Start production services:
+Store all secrets as a single JSON object in AWS Secrets Manager and reference
+it via `SECRETS_ARN`. The backend's `src/secrets.ts` loads the secret at
+startup and injects values into `process.env` before env validation runs.
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Create the secret (one-time)
+aws secretsmanager create-secret \
+  --name soroban-loyalty/production \
+  --secret-string '{
+    "DATABASE_URL": "postgres://...",
+    "JWT_SECRET": "...",
+    "SENTRY_AUTH_TOKEN": "...",
+    "SLACK_WEBHOOK_URL": "..."
+  }'
+
+# Reference it in your deployment
+SECRETS_ARN=arn:aws:secretsmanager:us-east-1:123456789:secret:soroban-loyalty/production
 ```
 
-### 9.2 Restart policy (#404)
-
-All services in `docker-compose.prod.yml` have `restart: unless-stopped`.
-This means Docker automatically restarts a container if it exits for any reason
-(crash, OOM kill, etc.) unless you explicitly stop it with `docker stop`.
-
-Development (`docker-compose.override.yml`) sets `restart: "no"` so that a
-crashed container stays stopped and the failure is immediately visible.
-
-**Manual test — verify restart behaviour:**
+### Alternative: Doppler
 
 ```bash
-# Start production stack
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# Kill the backend container
-docker kill soroban-loyalty-backend-1
-
-# Wait ~5 seconds, then confirm it restarted
-docker ps --filter name=backend
-# STATUS column should show "Up X seconds"
+doppler setup          # link project
+doppler run -- npm start
 ```
 
-### 9.3 Log aggregation (#398)
+### GitHub Actions Secrets
 
-All services use the `json-file` logging driver with a 50 MB / 5-file rotation.
-Logs are structured JSON, compatible with the backend Winston JSON formatter.
+All CI/CD credentials are stored as GitHub Actions secrets (never in workflow
+YAML files). Required secrets:
 
-**View logs:**
+| Secret name            | Used by                        |
+|------------------------|--------------------------------|
+| `DATABASE_URL`         | backend-ci, e2e                |
+| `SENTRY_AUTH_TOKEN`    | frontend build                 |
+| `SLACK_WEBHOOK_URL`    | alerting workflow              |
+| `AWS_ACCESS_KEY_ID`    | deploy-staging, terraform      |
+| `AWS_SECRET_ACCESS_KEY`| deploy-staging, terraform      |
+
+### Pre-commit Secret Scanning
+
+Install the pre-commit hook to catch secrets before they reach the repository:
 
 ```bash
-docker logs soroban-loyalty-backend-1 --follow
+cp scripts/pre-commit-secret-scan.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
 ```
 
-**Forward to Grafana Loki (recommended for production):**
+The hook uses [gitleaks](https://github.com/gitleaks/gitleaks) when available,
+falling back to grep-based pattern matching. CI also runs a secret scan on every
+PR via the `secret-scan` job in `.github/workflows/ci.yml`.
 
-1. Install the Loki Docker plugin on the host:
+```bash
+# Install gitleaks (macOS)
+brew install gitleaks
 
-   ```bash
-   docker plugin install grafana/loki-docker-driver:latest \
-     --alias loki --grant-all-permissions
-   ```
-
-2. Set `LOKI_URL` in your environment:
-
-   ```bash
-   export LOKI_URL=http://loki:3100/loki/api/v1/push
-   ```
-
-3. In `docker-compose.prod.yml`, uncomment the `loki` driver block under
-   `x-logging` and comment out the `json-file` block.
-
-4. Restart the stack:
-
-   ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-   ```
-
-Log aggregation credentials (`LOKI_URL`, any auth tokens) must be stored as
-environment variables — never hard-coded in compose files.
-
-### 9.4 Resource limits (#396)
-
-| Service | Memory limit | CPU limit | Rationale |
-|---------|-------------|-----------|-----------|
-| `backend` | 512 MB | 0.5 | Caps Node.js + indexer; OOM kills surface in `docker inspect State.OOMKilled` |
-| `frontend` | 256 MB | 0.25 | Sufficient for Next.js SSR; prevents renderer monopolising CPU during spikes |
-| `postgres` | 1 GB | 1.0 | Allows healthy `shared_buffers`; prevents DB from consuming all host RAM |
-
-If a container is OOM-killed, increase its limit in `docker-compose.prod.yml`
-and redeploy. Check `docker inspect <container> | grep OOMKilled` to confirm.
+# Install gitleaks (Linux)
+curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64.tar.gz \
+  | tar -xz -C /usr/local/bin gitleaks
+```
