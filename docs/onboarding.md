@@ -8,7 +8,7 @@ If this is your first open-source contribution, don’t worry. The goal is to he
 
 # Before You Start
 
-Before contributing, make sure you have completed the local environment setup described in the README.
+Before contributing, please follow the setup instructions in the README and CONTRIBUTING guide.
 
 The README includes:
 
