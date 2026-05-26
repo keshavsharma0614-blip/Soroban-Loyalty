@@ -1,3 +1,10 @@
+# [1.35.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.34.0...v1.35.0) (2026-05-26)
+
+
+### Features
+
+* **docker:** add prod compose with restart policy, resource limits, and JSON logging ([3c8b85b](https://github.com/Dev-Odun-oss/Soroban-Loyalty/commit/3c8b85be3b0b787503d999012832157fbc09a041)), closes [#404](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/404) [#398](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/398) [#396](https://github.com/Dev-Odun-oss/Soroban-Loyalty/issues/396)
+
 # [1.34.0](https://github.com/Dev-Odun-oss/Soroban-Loyalty/compare/v1.33.0...v1.34.0) (2026-05-26)
 
 
