@@ -586,3 +586,95 @@ For production, consider a dedicated RPC node via
 [Validation Cloud](https://validationcloud.io/),
 [NOWNodes](https://nownodes.io/), or running your own
 [stellar/quickstart](https://github.com/stellar/quickstart) container.
+
+---
+
+## 9. Docker Production Configuration
+
+### 9.1 Running in production with docker-compose.prod.yml
+
+The repository ships two Docker Compose files:
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Base service definitions (used in all environments) |
+| `docker-compose.prod.yml` | Production overrides: restart policy, resource limits, logging |
+| `docker-compose.override.yml` | Dev overrides: disables auto-restart so crashes stay visible |
+
+Start production services:
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### 9.2 Restart policy (#404)
+
+All services in `docker-compose.prod.yml` have `restart: unless-stopped`.
+This means Docker automatically restarts a container if it exits for any reason
+(crash, OOM kill, etc.) unless you explicitly stop it with `docker stop`.
+
+Development (`docker-compose.override.yml`) sets `restart: "no"` so that a
+crashed container stays stopped and the failure is immediately visible.
+
+**Manual test — verify restart behaviour:**
+
+```bash
+# Start production stack
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Kill the backend container
+docker kill soroban-loyalty-backend-1
+
+# Wait ~5 seconds, then confirm it restarted
+docker ps --filter name=backend
+# STATUS column should show "Up X seconds"
+```
+
+### 9.3 Log aggregation (#398)
+
+All services use the `json-file` logging driver with a 50 MB / 5-file rotation.
+Logs are structured JSON, compatible with the backend Winston JSON formatter.
+
+**View logs:**
+
+```bash
+docker logs soroban-loyalty-backend-1 --follow
+```
+
+**Forward to Grafana Loki (recommended for production):**
+
+1. Install the Loki Docker plugin on the host:
+
+   ```bash
+   docker plugin install grafana/loki-docker-driver:latest \
+     --alias loki --grant-all-permissions
+   ```
+
+2. Set `LOKI_URL` in your environment:
+
+   ```bash
+   export LOKI_URL=http://loki:3100/loki/api/v1/push
+   ```
+
+3. In `docker-compose.prod.yml`, uncomment the `loki` driver block under
+   `x-logging` and comment out the `json-file` block.
+
+4. Restart the stack:
+
+   ```bash
+   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+   ```
+
+Log aggregation credentials (`LOKI_URL`, any auth tokens) must be stored as
+environment variables — never hard-coded in compose files.
+
+### 9.4 Resource limits (#396)
+
+| Service | Memory limit | CPU limit | Rationale |
+|---------|-------------|-----------|-----------|
+| `backend` | 512 MB | 0.5 | Caps Node.js + indexer; OOM kills surface in `docker inspect State.OOMKilled` |
+| `frontend` | 256 MB | 0.25 | Sufficient for Next.js SSR; prevents renderer monopolising CPU during spikes |
+| `postgres` | 1 GB | 1.0 | Allows healthy `shared_buffers`; prevents DB from consuming all host RAM |
+
+If a container is OOM-killed, increase its limit in `docker-compose.prod.yml`
+and redeploy. Check `docker inspect <container> | grep OOMKilled` to confirm.
